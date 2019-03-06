@@ -229,7 +229,7 @@ stats_finished: "*Wil je nog een actie uitvoeren? Klik dan hier op */start"
 # Notifications
 noti_something_wrong_finding_user: "Hier ging iets *niet* met het ophalen van jouw gebruiker…\nMisschien kun je het nog eens proberen met /start. Of ga terug naar de groep."
 noti_gyms: "Gym notificaties"
-noti_raidbosses: "Raisboss notificaties"
+noti_raidbosses: "Raidboss notificaties"
 noti_which_notification: "*Welke type notificaties gaan we mee aan de slag?*"
 noti_nothing_set: "- Je hebt geen notificaties ingesteld"
 noti_current_notifications: "*Je hebt momenteel op de volgende ${noti_string} notificaties ingesteld als er raids gemeld worden:*\n${message}\nWil je notificaties toevoegen op een ${noti_single_string} of juist afmelden?\nDan gaan we deze eerst zoeken.\n\n*Voer een deel van de naam in, minimaal 2 tekens in…*"
