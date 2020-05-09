@@ -18,7 +18,7 @@ function ExitRaidWizard (bot) {
       await setLocale(ctx)
       const user = ctx.from
       // ToDo: check for endtime
-      let raids = await models.Raid.findAll({
+      const raids = await models.Raid.findAll({
         where: {
           endtime: {
             [Op.gt]: moment().unix()
@@ -29,7 +29,7 @@ function ExitRaidWizard (bot) {
           {
             model: models.Raiduser,
             where: {
-              'uid': user.id
+              uid: user.id
             }
           }
         ]
@@ -43,7 +43,7 @@ function ExitRaidWizard (bot) {
         for (var a = 0; a < raids.length; a++) {
           ctx.session.gymnames[raids[a].id] = raids[a].Gym.gymname
 
-          let strttm = moment.unix(raids[a].start1).format('H:mm')
+          const strttm = moment.unix(raids[a].start1).format('H:mm')
           // console.log(raids[a].start1, moment(raids[a].start1).tz(process.env.TZ))
           ctx.session.raidbtns.push([`${raids[a].Gym.gymname} ${strttm}; ${raids[a].target}`, raids[a].id])
         }
@@ -74,10 +74,10 @@ function ExitRaidWizard (bot) {
           where: {
             [Op.and]: [
               {
-                'uid': user.id
+                uid: user.id
               },
               {
-                'raidId': selectedraid
+                raidId: selectedraid
               }
             ]
           }
@@ -86,7 +86,7 @@ function ExitRaidWizard (bot) {
         console.log('Error removing user from raid', error)
       }
       // save users langugage
-      ctx.session.oldlang = ctx.i18n.locale()
+      const oldlocale = ctx.i18n.locale()
       // reason should always be in default locale
       ctx.i18n.locale(process.env.DEFAULT_LOCALE)
       const reason = ctx.i18n.t('exit_raid_list_message', {
@@ -94,8 +94,8 @@ function ExitRaidWizard (bot) {
         gymname: ctx.session.gymnames[selectedraid]
       })
       // restore user locale
-      ctx.i18n.locale(ctx.session.oldlang)
-      let out = await listRaids(reason, ctx)
+      ctx.i18n.locale(oldlocale)
+      const out = await listRaids(reason, ctx)
       if (out === null) {
         ctx.replyWithMarkdown(ctx.i18n.t('no_raids_found'), Markup.removeKeyboard().extra())
           .then(() => ctx.scene.leave())

@@ -19,9 +19,13 @@ function parseDateString (element) {
 module.exports = async () => {
   if (!lastExwaveDate || moment().add(-refreshRate, 'minutes').unix() > lastExwaveParseCheck) {
     await axios.get('https://www.p337.info/pokemongo/pages/ex-invites/', { responseType: 'text' }).then(response => {
-      let regex = /pokemon = {"response":([^]*)};/g
-      let match = regex.exec(response.data)
-      let list = JSON.parse(match[1])
+      const regex = /pokemon = {"response":([^]*)};/g
+      const match = regex.exec(response.data)
+
+      const listJson = match[1].trim()
+      const resultJson = listJson.endsWith('},\n]') ? listJson.replace('},\n]', '}]') : listJson
+
+      const list = JSON.parse(resultJson)
 
       lastExwaveParseCheck = moment().unix()
 

@@ -33,7 +33,7 @@ function AdminFieldResearchWizard (bot) {
         order: [['label', 'ASC']]
       })
       ctx.session.frbtns = [{ id: 0, label: ctx.i18n.t('admin_fres_btn_add_fres') }]
-      for (let key of keys) {
+      for (const key of keys) {
         ctx.session.frbtns.push({ id: parseInt(key.id), label: key.label })
       }
       ctx.session.frbtns.push({ id: -1, label: ctx.i18n.t('done') })
@@ -47,7 +47,7 @@ function AdminFieldResearchWizard (bot) {
     async (ctx) => {
       const input = ctx.update.message.text
       ctx.session.selectedbtn = {}
-      for (let btn of ctx.session.frbtns) {
+      for (const btn of ctx.session.frbtns) {
         if (btn.label === input) {
           ctx.session.selectedbtn = btn
           break
@@ -189,7 +189,7 @@ function AdminFieldResearchWizard (bot) {
         case ctx.i18n.t('yes'):
           console.log(`Research Key ${ctx.session.selectedbtn.label} deleted by ${ctx.from.id} ${ctx.from.first_name}`)
           try {
-            models.Fieldresearchkey.destroy({
+            await models.Fieldresearchkey.destroy({
               where: {
                 id: ctx.session.selectedbtn.id
               }

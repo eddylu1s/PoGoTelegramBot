@@ -6,7 +6,7 @@ moment.tz.setDefault('Europe/Amsterdam')
 * Converts a given time, i.e. 20:30 or 09:45, to a timestamp
 * @param timein {string}
 */
-module.exports = (timein) => {
+module.exports = (days, timein) => {
   const thetime = timein.split(':')
   if (thetime[0] === undefined || thetime[1] === undefined) {
     return false
@@ -19,7 +19,7 @@ module.exports = (timein) => {
   if (minutes < 0 || minutes > 59) {
     return false
   }
-  var now = moment()
+  var now = moment().add(days, 'days')
   now.hours(hours)
   now.minutes(minutes)
   now.seconds(0)

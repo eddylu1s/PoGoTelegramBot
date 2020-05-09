@@ -10,7 +10,7 @@ module.exports = async (bossname) => {
   // first start by checking for eggs -might save us a DB query-
   // match 'level 5', 'lvl 5', 'level5', 'lvl5'
   if (bossname.toLowerCase().indexOf('lvl') > -1 || bossname.toLowerCase().indexOf('level') > -1) {
-    let egg = bossname.match(/(?:^lvl|^level)\s*(\d)/i)
+    const egg = bossname.match(/(?:^lvl|^level)\s*(\d)/i)
     if (egg !== null && egg.length > 1 && parseInt(egg[1]) > 0) {
       // Let's see if the egg is defined…
       const boss = await models.Raidboss.findOne({
@@ -30,7 +30,7 @@ module.exports = async (bossname) => {
     }
   } else {
     // next; search DB
-    let boss = await models.Raidboss.findOne({
+    const boss = await models.Raidboss.findOne({
       where: {
         name: { [Op.like]: bossname }
       }
@@ -41,7 +41,9 @@ module.exports = async (bossname) => {
       // last resort; try metaphone
       const boss = await models.Raidboss.findOne({
         where: {
-          metaphone: metaphone(bossname)
+          metaphone: {
+            [Op.eq]: metaphone(bossname)
+          }
         }
       })
       if (boss) {

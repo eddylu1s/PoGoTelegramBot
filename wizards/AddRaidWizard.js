@@ -13,6 +13,7 @@ const sendGymNotifications = require('../util/sendGymNotifications')
 const sendRaidbossNotifications = require('../util/sendRaidbossNotifications')
 const resolveRaidBoss = require('../util/resolveRaidBoss')
 const setLocale = require('../util/setLocale')
+const TIMINGS = require('../timeSettings.js')
 
 moment.tz.setDefault('Europe/Amsterdam')
 
@@ -21,44 +22,71 @@ function AddRaidWizard (bot) {
     // step 0
     async (ctx) => {
       await setLocale(ctx)
-      console.log('session: ', ctx.session)
       console.log('HELLO ADD RAID WIZARD')
       ctx.session.newraid = {}
       ctx.session.gymcandidates = []
-      return ctx.replyWithMarkdown(ctx.i18n.t('add_raid_welcome'), Markup.removeKeyboard())
+      return ctx.replyWithMarkdown(`${ctx.i18n.t('add_raid_welcome')}\r\n`, Markup.keyboard([{ text: ctx.i18n.t('btn_gym_find_location'), request_location: true }]).resize().extra({ disable_web_page_preview: true }))
         .then(() => ctx.wizard.next())
     },
     // step 1
     async (ctx) => {
       // console.log('step 1', ctx.update.message.text)
-      const term = ctx.update.message.text.trim()
-      if (term.length < 2) {
-        return ctx.replyWithMarkdown(ctx.i18n.t('find_gym_two_chars_minimum'))
-        // .then(() => ctx.wizard.back())
-      } else {
-        const candidates = await models.Gym.findAll({
-          where: {
-            gymname: { [Op.like]: '%' + term + '%' }
+      let candidates = []
+      if (ctx.update.message.location) {
+        const lat = ctx.update.message.location.latitude
+        const lon = ctx.update.message.location.longitude
+        const sf = 3.14159 / 180 // scaling factor
+        const er = 6371 // earth radius in km, approximate
+        const mr = 1.0 // max radius in Km
+        const $sql = `SELECT id, gymname, lat, lon, (ACOS(SIN(lat*${sf})*SIN(${lat}*${sf}) + COS(lat*${sf})*COS(${lat}*${sf})*COS((lon-${lon})*${sf})))*${er} AS d FROM gyms WHERE ${mr} >= ${er} * ACOS(SIN(lat*${sf})*SIN(${lat}*${sf}) + COS(lat*${sf})*COS(${lat}*${sf})*COS((lon-${lon})*${sf})) AND removed = 0 ORDER BY d`
+        candidates = await models.sequelize.query($sql, {
+          model: models.Gym,
+          mapToModel: {
+            [Op.eq]: true // pass true here if you have any mapped fields
           }
         })
-        if (candidates.length === 0) {
-          ctx.replyWithMarkdown(ctx.i18n.t('find_gym_failed_retry', { term: term }))
-          return
+      } else {
+        // User was typing
+        const term = ctx.update.message.text.trim()
+        if (term.length < 2) {
+          return ctx.replyWithMarkdown(ctx.i18n.t('find_gym_two_chars_minimum'))
+          // .then(() => ctx.wizard.back())
+        } else {
+          candidates = await models.Gym.findAll({
+            where: {
+              [Op.and]: [
+                {
+                  gymname: {
+                    [Op.like]: '%' + term + '%'
+                  }
+                },
+                {
+                  removed: {
+                    [Op.eq]: false
+                  }
+                }
+              ]
+            }
+          })
+          if (candidates.length === 0) {
+            ctx.replyWithMarkdown(ctx.i18n.t('find_gym_failed_retry', { term: term }))
+            return
+          }
         }
-        ctx.session.gymcandidates = []
-        for (let i = 0; i < candidates.length; i++) {
-          ctx.session.gymcandidates.push([
-            candidates[i].gymname.trim(),
-            candidates[i].id
-          ])
-        }
-
-        ctx.session.gymcandidates.push([
-          ctx.i18n.t('btn_gym_not_found'), 0
-        ])
-        return ctx.replyWithMarkdown(ctx.i18n.t('select_a_gym'), Markup.keyboard(ctx.session.gymcandidates.map(el => el[0])).oneTime().resize().extra())
-          .then(() => ctx.wizard.next())
       }
+      ctx.session.gymcandidates = []
+      for (let i = 0; i < candidates.length; i++) {
+        ctx.session.gymcandidates.push([
+          candidates[i].gymname.trim(),
+          candidates[i].id
+        ])
+      }
+
+      ctx.session.gymcandidates.push([
+        ctx.i18n.t('btn_gym_not_found'), 0
+      ])
+      return ctx.replyWithMarkdown(ctx.i18n.t('select_a_gym'), Markup.keyboard(ctx.session.gymcandidates.map(el => el[0])).oneTime().resize().extra())
+        .then(() => ctx.wizard.next())
     },
     // step 2
     async (ctx) => {
@@ -87,7 +115,7 @@ function AddRaidWizard (bot) {
           })
       } else {
         // retrieve selected candidate from session
-        let selectedgym = ctx.session.gymcandidates[selectedIndex]
+        const selectedgym = ctx.session.gymcandidates[selectedIndex]
         ctx.session.newraid.gymId = selectedgym[1]
         ctx.session.newraid.gymname = selectedgym[0]
         ctx.session.timeOptions = [
@@ -96,7 +124,7 @@ function AddRaidWizard (bot) {
           [ctx.i18n.t('btn_end_mode_time'), 'endmodetime'],
           [ctx.i18n.t('btn_end_mode_min'), 'endmodemin']
         ]
-        let btns = ctx.session.timeOptions.map(el => el[0])
+        const btns = ctx.session.timeOptions.map(el => el[0])
 
         return ctx.replyWithMarkdown(ctx.i18n.t('enter_end_time_mode_question'),
           Markup.keyboard(btns).oneTime().resize().extra()
@@ -118,9 +146,9 @@ function AddRaidWizard (bot) {
       if (timemode === 'startmodetime') {
         question = ctx.i18n.t('enter_starttime_time')
       } else if (timemode === 'endmodetime') {
-        question = ctx.i18n.t('enter_endtime_time')
+        question = ctx.i18n.t('enter_endtime_time', { bosstime: TIMINGS.BOSS })
       } else if (timemode === 'startmodemin') {
-        question = ctx.i18n.t('enter_starttime_minutes')
+        question = ctx.i18n.t('enter_starttime_minutes', { bosstime: TIMINGS.BOSS })
       } else if (timemode === 'endmodemin') {
         question = ctx.i18n.t('enter_endtime_minutes')
       }
@@ -139,12 +167,12 @@ function AddRaidWizard (bot) {
           return ctx.replyWithMarkdown(ctx.i18n.t('invalid_time_retry'))
         }
       } else {
-        let minutes = parseInt(message)
-        if ((!minutes || minutes < 0 || minutes > 60) && ctx.session.timemode === 'startmodemin') {
-          return ctx.replyWithMarkdown(ctx.i18n.t('invalid_time_minutes_retry'))
+        const minutes = parseInt(message)
+        if ((!minutes || minutes < 0 || minutes > TIMINGS.HATCH) && ctx.session.timemode === 'startmodemin') {
+          return ctx.replyWithMarkdown(ctx.i18n.t('invalid_time_minutes_retry', { hatchtime: TIMINGS.HATCH }))
         }
-        if ((!minutes || minutes < 0 || minutes > 45) && ctx.session.timemode === 'endmodemin') {
-          return ctx.replyWithMarkdown(`${ctx.i18n.t('add_raid_0_45_min_error')}`)
+        if ((!minutes || minutes < 0 || minutes > TIMINGS.BOSS) && ctx.session.timemode === 'endmodemin') {
+          return ctx.replyWithMarkdown(`${ctx.i18n.t('add_raid_0_45_min_error', { bosstime: TIMINGS.BOSS })}`)
         }
         if (minutes < 5 && ctx.session.timemode === 'endmodemin') {
           return ctx.replyWithMarkdown(ctx.i18n.t('time_to_tight'))
@@ -156,7 +184,7 @@ function AddRaidWizard (bot) {
       let endtime
       if (ctx.session.timemode === 'startmodetime' || ctx.session.timemode === 'startmodemin') {
         // user wanted to enter time when egg hatches
-        endtime = moment.unix(tmptime).add(45, 'minutes').unix()
+        endtime = moment.unix(tmptime).add(TIMINGS.BOSS, 'minutes').unix()
       } else {
         // user wanted to enter raid's end time
         endtime = tmptime
@@ -165,7 +193,7 @@ function AddRaidWizard (bot) {
       ctx.session.newraid.endtime = endtime
       // calculate minimum start time
       let starttime = moment.unix(endtime)
-      starttime.subtract(45, 'minutes')
+      starttime.subtract(TIMINGS.BOSS, 'minutes')
 
       if (starttime < moment()) {
         starttime = moment()
@@ -175,17 +203,17 @@ function AddRaidWizard (bot) {
     },
     // step 4
     async (ctx) => {
-      let endtime = ctx.session.newraid.endtime
+      const endtime = ctx.session.newraid.endtime
       // calculate minimum start time
-      let starttime = moment.unix(endtime)
-      starttime.subtract(45, 'minutes')
+      const starttime = moment.unix(endtime)
+      starttime.subtract(TIMINGS.BOSS, 'minutes')
 
-      let message = ctx.update.message.text.trim()
+      const message = ctx.update.message.text.trim()
       let start1
       if (message === 'x' || message === 'X') {
         // default starttime of 30 before endtime or right now, when time is short:
         let start1time = moment.unix(endtime)
-        start1time.subtract(30, 'minutes')
+        start1time.subtract(TIMINGS.RAID_START, 'minutes')
         if (start1time < moment()) {
           start1time = moment()
         }
@@ -203,7 +231,23 @@ function AddRaidWizard (bot) {
         }
       }
       ctx.session.newraid.start1 = start1
-      ctx.replyWithMarkdown(ctx.i18n.t('raidboss_question'))
+
+      var lastRaidBossesQuery = await models.sequelize.query('SELECT target FROM raids ORDER BY createdAt DESC LIMIT 10;', {
+        model: models.Raid,
+        mapToModel: {
+          [Op.eq]: true // pass true here if you have any mapped fields
+        }
+      })
+
+      var lastRaidBosses = [...new Set(lastRaidBossesQuery.map(({ target: text }) => text))].slice(0, 5).map(text => ({ text }))
+      var buttons = lastRaidBosses.reduce((result, value, index, array) => {
+        if (index % 2 === 0) {
+          result.push(array.slice(index, index + 2))
+        }
+        return result
+      }, [])
+
+      ctx.replyWithMarkdown(ctx.i18n.t('raidboss_question'), Markup.keyboard(buttons).resize().extra({ disable_web_page_preview: true }))
         .then(() => ctx.wizard.next())
     },
     // step 5
@@ -221,7 +265,7 @@ function AddRaidWizard (bot) {
       }
       const endtime = ctx.session.newraid.endtime
       const start1 = ctx.session.newraid.start1
-      let out = `${ctx.i18n.t('until')} ${moment.unix(endtime).format('HH:mm')}: *${ctx.session.newraid.target}*\n${ctx.session.newraid.bossid !== null ? (ctx.i18n.t('recommended') + ': ' + ctx.session.newraid.accounts + ' accounts\n') : ''}${ctx.session.newraid.gymname}\n${ctx.i18n.t('start')}: ${moment.unix(start1).format('HH:mm')}`
+      const out = `${ctx.i18n.t('until')} ${moment.unix(endtime).format('HH:mm')}: *${ctx.session.newraid.target}*\n${ctx.session.newraid.bossid !== null ? (ctx.i18n.t('recommended') + ': ' + ctx.session.newraid.accounts + ' accounts\n') : ''}${ctx.session.newraid.gymname}\n${ctx.i18n.t('start')}: ${moment.unix(start1).format('HH:mm')}`
       ctx.session.saveOptions = [ctx.i18n.t('yes'), ctx.i18n.t('no')]
       return ctx.replyWithMarkdown(`${out}\n\n*${ctx.i18n.t('save_question')}*`, Markup.keyboard(ctx.session.saveOptions)
         .resize().oneTime().extra())
@@ -230,17 +274,33 @@ function AddRaidWizard (bot) {
     // step 6
     async (ctx) => {
       const user = ctx.from
-      let saveme = ctx.session.saveOptions.indexOf(ctx.update.message.text) === 0
+      const saveme = ctx.session.saveOptions.indexOf(ctx.update.message.text) === 0
       if (saveme) {
         // Sometimes a new raid is getting submitted multiple times
         // ToDo: adapt this when multiple starttimes are getting implemented
         var raidexists = await models.Raid.findOne({
           where: {
             [Op.and]: [
-              { gymId: ctx.session.newraid.gymId },
-              { target: ctx.session.newraid.target },
-              { start1: ctx.session.newraid.start1 },
-              { endtime: ctx.session.newraid.endtime }
+              {
+                gymId: {
+                  [Op.eq]: ctx.session.newraid.gymId
+                }
+              },
+              {
+                target: {
+                  [Op.eq]: ctx.session.newraid.target
+                }
+              },
+              {
+                start1: {
+                  [Op.eq]: ctx.session.newraid.start1
+                }
+              },
+              {
+                endtime: {
+                  [Op.eq]: ctx.session.newraid.endtime
+                }
+              }
             ]
           }
         })
@@ -252,7 +312,7 @@ function AddRaidWizard (bot) {
               return ctx.scene.leave()
             })
         }
-        let newraid = models.Raid.build({
+        const newraid = models.Raid.build({
           gymId: ctx.session.newraid.gymId,
           start1: ctx.session.newraid.start1,
           target: ctx.session.newraid.target,
@@ -276,11 +336,15 @@ function AddRaidWizard (bot) {
               return ctx.scene.leave()
             })
         }
-        // send updated list to group
-        let out = await listRaids(ctx.i18n.t('raid_added_list', {
+        const oldlang = ctx.i18n.locale()
+        ctx.i18n.locale(process.env.DEFAULT_LOCALE)
+        const reason = ctx.i18n.t('raid_added_list', {
           gymname: ctx.session.newraid.gymname,
           user: user
-        }), ctx)
+        })
+        ctx.i18n.locale(oldlang)
+        // send updated list to group
+        const out = await listRaids(reason, ctx)
         if (out === null) {
           return ctx.replyWithMarkdown(ctx.i18n.t('unexpected_raid_not_found'), Markup.removeKeyboard().extra())
             .then(() => ctx.scene.leave())
@@ -302,7 +366,7 @@ function AddRaidWizard (bot) {
     },
     // Step 7
     async (ctx) => {
-      let participate = ctx.session.participateOptions.indexOf(ctx.update.message.text)
+      const participate = ctx.session.participateOptions.indexOf(ctx.update.message.text)
       if (participate === 1) {
         // user does NOT participate, exit
         return ctx.replyWithMarkdown(ctx.i18n.t('finished_procedure'), Markup.removeKeyboard().extra())
@@ -321,7 +385,7 @@ function AddRaidWizard (bot) {
       const accounts = parseInt(ctx.update.message.text)
       const user = ctx.from
       // Check already registered? If so; update else store new
-      let raiduser = await models.Raiduser.findOne({
+      const raiduser = await models.Raiduser.findOne({
         where: {
           [Op.and]: [{ uid: user.id }, { raidId: ctx.session.savedraid.id }]
         }
@@ -339,7 +403,7 @@ function AddRaidWizard (bot) {
         }
       } else {
         // new raid user
-        let raiduser = models.Raiduser.build({
+        const raiduser = models.Raiduser.build({
           raidId: ctx.session.savedraid.id,
           username: user.first_name,
           uid: user.id,
@@ -353,10 +417,14 @@ function AddRaidWizard (bot) {
             .then(() => ctx.scene.leave())
         }
       }
-      let out = await listRaids(ctx.i18n.t('raid_user_added_list', {
+      const oldlang = ctx.i18n.locale()
+      ctx.i18n.locale(process.env.DEFAULT_LOCALE)
+      const reason = ctx.i18n.t('raid_user_added_list', {
         user: user,
         gymname: ctx.session.newraid.gymname
-      }), ctx)
+      })
+      ctx.i18n.locale(oldlang)
+      const out = await listRaids(reason, ctx)
       if (out === null) {
         ctx.replyWithMarkdown(ctx.i18n.t('unexpected_raid_not_found'), Markup.removeKeyboard().extra())
           .then(() => ctx.scene.leave())
@@ -375,24 +443,24 @@ function AddRaidWizard (bot) {
 }
 
 async function sendGyms (ctx, bot) {
-  let gymId = ctx.session.newraid.gymId
-  let gymname = ctx.session.newraid.gymname
-  let target = ctx.session.newraid.target
-  let starttime = ctx.session.newraid.start1
+  const gymId = ctx.session.newraid.gymId
+  const gymname = ctx.session.newraid.gymname
+  const target = ctx.session.newraid.target
+  const starttime = ctx.session.newraid.start1
 
-  await sendGymNotifications(bot, gymId, gymname, target, starttime)
+  await sendGymNotifications(ctx, bot, gymId, gymname, target, starttime)
 }
 
 async function sendRaidbosses (ctx, bot) {
-  let raidbossId = ctx.session.newraid.bossid
+  const raidbossId = ctx.session.newraid.bossid
   if (!raidbossId) {
     return
   }
-  let gymname = ctx.session.newraid.gymname
-  let target = ctx.session.newraid.target
-  let starttime = ctx.session.newraid.start1
+  const gymname = ctx.session.newraid.gymname
+  const target = ctx.session.newraid.target
+  const starttime = ctx.session.newraid.start1
 
-  await sendRaidbossNotifications(bot, raidbossId, gymname, target, starttime)
+  await sendRaidbossNotifications(ctx, bot, raidbossId, gymname, target, starttime)
 }
 
 module.exports = AddRaidWizard

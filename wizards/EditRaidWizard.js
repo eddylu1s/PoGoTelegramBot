@@ -12,9 +12,38 @@ const listRaids = require('../util/listRaids')
 const sendRaidbossNotifications = require('../util/sendRaidbossNotifications')
 const resolveRaidBoss = require('../util/resolveRaidBoss')
 const setLocale = require('../util/setLocale')
+const TIMINGS = require('../timeSettings.js')
 
 moment.tz.setDefault('Europe/Amsterdam')
 
+async function isAdmin (bot, user) {
+  let isAdmin = false
+  const admins = await bot.telegram.getChatAdministrators(process.env.GROUP_ID)
+  for (let a = 0; a < admins.length; a++) {
+    if (admins[a].user.id === user.id) {
+      isAdmin = true
+    }
+  }
+  // or marked admin from database?
+  if (!isAdmin) {
+    const dbAdmin = await models.User.findOne({
+      where: {
+        tId: {
+          [Op.eq]: user.id
+        },
+        [Op.and]: {
+          isAdmin: {
+            [Op.eq]: true
+          }
+        }
+      }
+    })
+    if (dbAdmin !== null) {
+      isAdmin = true
+    }
+  }
+  return isAdmin
+}
 function EditRaidWizard (bot) {
   return new WizardScene('edit-raid-wizard',
 
@@ -25,11 +54,15 @@ function EditRaidWizard (bot) {
       ctx.session.newgymid = null
       ctx.session.editattr = null
 
-      let raids = await models.Raid.findAll({
+      const until = moment()
+      if (await isAdmin(bot, ctx.from)) {
+        until.subtract(1, 'hour')
+      }
+      const raids = await models.Raid.findAll({
         include: [models.Gym, models.Raiduser],
         where: {
           endtime: {
-            [Op.gt]: moment().unix()
+            [Op.gt]: until.unix()
           }
         }
       })
@@ -78,7 +111,7 @@ function EditRaidWizard (bot) {
         }
         // Catch gym not found errors…
         if (selectedraid === null) {
-          return ctx.replyWithMarkdown(`Er ging iets fout bij het kiezen van de gym.\n*Gebruik */start* om het nog eens te proberen…*\n`, Markup.removeKeyboard().extra())
+          return ctx.replyWithMarkdown('Er ging iets fout bij het kiezen van de gym.\n*Gebruik */start* om het nog eens te proberen…*\n', Markup.removeKeyboard().extra())
             .then(() => {
               ctx.session = {}
               return ctx.scene.leave()
@@ -129,8 +162,8 @@ function EditRaidWizard (bot) {
             break
           case 'start1':
             ctx.session.editattr = 'start1'
-            let endtimestr = moment.unix(ctx.session.editraid.endtime).format('HH:mm')
-            let start1str = moment.unix(ctx.session.editraid.endtime).subtract(45, 'minutes').format('HH:mm')
+            const endtimestr = moment.unix(ctx.session.editraid.endtime).format('HH:mm')
+            const start1str = moment.unix(ctx.session.editraid.endtime).subtract(TIMINGS.BOSS, 'minutes').format('HH:mm')
             question = ctx.i18n.t('edit_raid_question_starttime_range', {
               start1str: start1str,
               endtimestr: endtimestr
@@ -155,7 +188,7 @@ function EditRaidWizard (bot) {
     },
     // step 3: enter new value or jump to 6 for entering a new gym
     async (ctx) => {
-      let key = ctx.session.editattr
+      const key = ctx.session.editattr
       let value = null
       // user has not just updated gym? If not expect text message
       if (key !== 'gymId') {
@@ -164,14 +197,14 @@ function EditRaidWizard (bot) {
         value = ctx.session.newgymid
       }
       if (key === 'endtime' || key === 'start1') {
-        let timevalue = inputTime(value)
+        const timevalue = inputTime(value)
         if (timevalue === false) {
           return ctx.replyWithMarkdown(ctx.i18n.t('invalid_time_retry'))
         }
         if (key === 'start1') {
-          let endtime = moment.unix(ctx.session.editraid.endtime)
-          let start = moment.unix(ctx.session.editraid.endtime).subtract(45, 'minutes')
-          let start1 = moment.unix(timevalue)
+          const endtime = moment.unix(ctx.session.editraid.endtime)
+          const start = moment.unix(ctx.session.editraid.endtime).subtract(TIMINGS.BOSS, 'minutes')
+          const start1 = moment.unix(timevalue)
           if (start.diff(moment(start1)) > 0 || endtime.diff(start1) < 0) {
             return ctx.replyWithMarkdown(ctx.i18n.t('invalid_time_retry'))
           }
@@ -201,7 +234,7 @@ function EditRaidWizard (bot) {
 
     // step 4: do more or save?
     async (ctx) => {
-      let out = `${ctx.i18n.t('until')}: ${moment.unix(ctx.session.editraid.endtime).format('HH:mm')}: *${ctx.session.editraid.target}*\n${ctx.session.editraid.bossid !== null ? ctx.i18n.t('edit_raidboss_overview_accounts') + ': ' + (ctx.session.editraid.accounts !== undefined ? ctx.session.editraid.accounts : '') + '\n' : ''}${ctx.session.editraid.gymname}\nStart: ${moment.unix(ctx.session.editraid.start1).format('HH:mm')}\n\n`
+      const out = `${ctx.i18n.t('until')}: ${moment.unix(ctx.session.editraid.endtime).format('HH:mm')}: *${ctx.session.editraid.target}*\n${ctx.session.editraid.bossid !== null ? ctx.i18n.t('edit_raidboss_overview_accounts') + ': ' + (ctx.session.editraid.accounts !== undefined ? ctx.session.editraid.accounts : '') + '\n' : ''}${ctx.session.editraid.gymname}\nStart: ${moment.unix(ctx.session.editraid.start1).format('HH:mm')}\n\n`
       ctx.session.savebtns = [
         ctx.i18n.t('edit_raidboss_btn_save_close'),
         ctx.i18n.t('edit_raid_edit_more'),
@@ -240,7 +273,7 @@ function EditRaidWizard (bot) {
               }
             )
             // save users langugage
-            ctx.session.oldlang = ctx.i18n.locale()
+            const oldlocale = ctx.i18n.locale()
             // reason should always be in default locale
             ctx.i18n.locale(process.env.DEFAULT_LOCALE)
             const reason = ctx.i18n.t('edit_raid_list_message', {
@@ -248,9 +281,8 @@ function EditRaidWizard (bot) {
               user: user
             })
             // restore user locale
-            ctx.i18n.locale(ctx.session.oldlang)
-
-            let out = await listRaids(reason, ctx)
+            ctx.i18n.locale(oldlocale)
+            const out = await listRaids(reason, ctx)
             console.log('ctx.session.oldlang', ctx.session.oldlang)
             bot.telegram.sendMessage(process.env.GROUP_ID, out, { parse_mode: 'Markdown', disable_web_page_preview: true })
             await sendRaidbosses(ctx, bot)
@@ -282,7 +314,7 @@ function EditRaidWizard (bot) {
 
     // step 6: handle gym search
     async (ctx) => {
-      let question = ctx.i18n.t('edit_raid_question_gym')
+      const question = ctx.i18n.t('edit_raid_question_gym')
       return ctx.replyWithMarkdown(question)
         .then(() => ctx.wizard.next())
     },
@@ -336,8 +368,8 @@ function EditRaidWizard (bot) {
 
     // step 8: handle gym selection
     async (ctx) => {
-      let gymIndex = ctx.session.gymbtns.indexOf(ctx.update.message.text)
-      let selectedGym = ctx.session.gymcandidates[gymIndex]
+      const gymIndex = ctx.session.gymbtns.indexOf(ctx.update.message.text)
+      const selectedGym = ctx.session.gymcandidates[gymIndex]
       if (selectedGym.id === 0) {
         // mmm, let's try searching for a gym again
         return ctx.replyWithMarkdown(ctx.i18n.t('edit_raid_search_gym_again'), Markup.removeKeyboard().extra())
@@ -356,15 +388,15 @@ function EditRaidWizard (bot) {
   )
 }
 async function sendRaidbosses (ctx, bot) {
-  let raidbossId = ctx.session.editraid.bossid
+  const raidbossId = ctx.session.editraid.bossid
   if (!raidbossId) {
     return
   }
-  let gymname = ctx.session.editraid.gymname
-  let target = ctx.session.editraid.target
-  let starttime = ctx.session.editraid.start1
+  const gymname = ctx.session.editraid.gymname
+  const target = ctx.session.editraid.target
+  const starttime = ctx.session.editraid.start1
 
-  await sendRaidbossNotifications(bot, raidbossId, gymname, target, starttime)
+  await sendRaidbossNotifications(ctx, bot, raidbossId, gymname, target, starttime)
 }
 
 module.exports = EditRaidWizard

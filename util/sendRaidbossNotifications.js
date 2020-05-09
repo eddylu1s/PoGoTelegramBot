@@ -7,8 +7,8 @@ const models = require('../models')
  * Sends all applicable raidboss notifications
  * TODO: send in batches
  */
-module.exports = async (bot, raidbossId, gymname, target, starttime) => {
-  let notifications = await models.RaidbossNotification.findAll({
+module.exports = async (ctx, bot, raidbossId, gymname, target, starttime) => {
+  const notifications = await models.RaidbossNotification.findAll({
     include: [
       models.User
     ],
@@ -18,12 +18,19 @@ module.exports = async (bot, raidbossId, gymname, target, starttime) => {
       }
     }
   })
-
-  for (let notification of notifications) {
+  const oldlocale = ctx.i18n.locale()
+  console.log('SENDING RAIDBOSS NOTIFICATION', notifications.length, target)
+  for (const notification of notifications) {
+    ctx.i18n.locale(notification.User.locale)
     try {
-      bot.telegram.sendMessage(notification.User.tId, `Hey.. Jij was toch geïnteresseerd in *${target}* raids? Er is er zojuist een toegevoegd bij *${gymname}* om *${moment.unix(starttime).format('H:mm')}*.`, { parse_mode: 'Markdown', disable_web_page_preview: true })
+      bot.telegram.sendMessage(notification.User.tId, ctx.i18n.t('noti_raidboss_notification', {
+        target: target,
+        gymname: gymname,
+        starttime: moment.unix(starttime).format('H:mm')
+      }), { parse_mode: 'Markdown', disable_web_page_preview: true })
     } catch (error) {
       console.log('Error while sending raidboss notification to ', notification.User.tId, error.message)
     }
   }
+  ctx.i18n.locale(oldlocale)
 }
